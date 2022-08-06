@@ -17,11 +17,29 @@ defmodule Filex.ServerTest do
     test_server(8900)
   end
 
+  test "using S3 storage" do
+    port = 8901
+
+    {:ok, _pid} =
+      Filex.Server.start_link(
+        port: port,
+        authentication: [{'lynx', 'test'}],
+        storage:
+          {Filex.Storage.S3,
+           bucket: "filex-sftp",
+           region: "us-east-1",
+           access_key_id: [{:awscli, "default", 30}],
+           secret_access_key: [{:awscli, "default", 30}]}
+      )
+
+    test_server(port)
+  end
+
   def test_server(port) do
     :ssh.start()
 
     # connect
-    assert {:ok, channel, ref} =
+    assert {:ok, channel, _ref} =
              :ssh_sftp.start_channel('localhost', port,
                user: 'lynx',
                password: 'test',
