@@ -18,8 +18,6 @@ defmodule Filex.SftpdChannel do
 
   @impl :ssh_server_channel
   def handle_msg(msg, state) do
-    # Logger.info(inspect(msg))
-    # Logger.info(inspect(state))
     :ssh_sftpd.handle_msg(msg, state)
   end
 
@@ -63,11 +61,10 @@ defmodule Filex.SftpdChannel do
 
   @impl :ssh_server_channel
   def handle_ssh_msg(msg, state) do
-    # IO.inspect("received msg")
     s = state(state)
     file_state = populate_file_state(s)
     new_state = List.keystore(s, :file_state, 0, {:file_state, file_state})
-    # IO.inspect(new_state)
+
     :ssh_sftpd.handle_ssh_msg(msg, to_record(new_state))
   end
 
