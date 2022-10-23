@@ -24,12 +24,18 @@ defmodule Filex.ServerTest do
       Filex.Server.start_link(
         port: port,
         authentication: [{'lynx', 'test'}],
-        storage:
-          {Filex.Storage.S3,
-           bucket: "filex-sftp",
-           region: "us-east-1",
-           access_key_id: [{:awscli, "default", 30}],
-           secret_access_key: [{:awscli, "default", 30}]}
+        storage: {
+          Filex.Storage.S3,
+          scheme: "http://",
+          host: "localhost",
+          port: 4566,
+          region: "us-east-1",
+          bucket: "filex-sftp",
+          access_key_id: "",
+          secret_access_key: ""
+          #  access_key_id: [{:awscli, "default", 30}],
+          #  secret_access_key: [{:awscli, "default", 30}]
+        }
       )
 
     test_server(port)
