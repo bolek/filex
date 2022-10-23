@@ -121,6 +121,7 @@ defmodule Filex.Storage.S3 do
     end
 
     def is_dir(rel_path, state)
+    def is_dir('/', state), do: {true, state}
 
     def is_dir(rel_path, state) do
       Logger.info("is dir: #{rel_path}")
