@@ -68,7 +68,7 @@ defmodule Filex.Storage.S3 do
       {:ok, path}
     end
 
-    def close(%ExAws.S3.Upload{path: path} = upload_op, state) do
+    def close(%ExAws.S3.Upload{} = upload_op, state) do
       parts =
         Keyword.get(state, :aws_upload_progress)
         |> Map.fetch!(:parts)
