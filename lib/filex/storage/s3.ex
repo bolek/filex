@@ -38,6 +38,7 @@ defmodule Filex.Storage.S3 do
     end
 
     defp on_event({event_name, meta}, state) do
+      Logger.metadata(user: user(state))
       Logger.info("on_event: #{inspect(event_name)}")
 
       case state[:event_handler] do
