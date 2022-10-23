@@ -37,6 +37,10 @@ defmodule Filex.Storage.S3 do
       |> String.trim_trailing(".")
     end
 
+    defp user(state) do
+      Keyword.get(state, :user, :anonymous) |> to_string
+    end
+
     defp on_event({event_name, meta}, state) do
       Logger.metadata(user: user(state))
       Logger.info("on_event: #{inspect(event_name)}")
@@ -129,7 +133,7 @@ defmodule Filex.Storage.S3 do
       is_dir =
         bucket(state)
         |> ExAws.S3.get_object(user_path(rel_path, state))
-        |> ExAws.request(ex_aws_config(state) |> Map.to_list())
+        |> request(state)
         |> case do
           {:ok, %{headers: headers, status_code: 200}} ->
             Enum.any?(headers, fn
@@ -145,6 +149,14 @@ defmodule Filex.Storage.S3 do
     rescue
       e ->
         Logger.error(e)
+    end
+
+    def request(op, state) do
+      Logger.metadata(user: Keyword.get(state, :user, :anonymous) |> to_string())
+      aws_config = ex_aws_config(state)
+
+      op
+      |> ExAws.request(aws_config)
     end
 
     def list_dir(rel_path, state) do
