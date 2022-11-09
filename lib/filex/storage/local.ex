@@ -1,4 +1,6 @@
 defmodule Filex.Storage.Local do
+  require Logger
+
   def spec(ssh_options, config) do
     options =
       config
@@ -75,7 +77,7 @@ defmodule Filex.Storage.Local do
     end
 
     def del_dir(path, state) do
-      after_event({:del_dir, path}, state, {:file.del_dir(user_path(path, state)), state})
+      after_event({:del_dir, path}, state, {:file.del_dir_r(user_path(path, state)), state})
     end
 
     def get_cwd(state) do
@@ -122,6 +124,8 @@ defmodule Filex.Storage.Local do
     end
 
     def read_link(path, state) do
+      Logger.info("read_link/2")
+
       {:file.read_link(user_path(path, state)), state}
     end
 
