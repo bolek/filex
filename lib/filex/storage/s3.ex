@@ -300,7 +300,6 @@ defmodule Filex.Storage.S3 do
       {{:error, :einval}, state}
     end
 
-    # read link info - not supported
     def read_link_info(path, state) do
       read_file_info(path, state)
     end
@@ -463,8 +462,6 @@ defmodule Filex.Storage.S3 do
     defp extract_header_value(headers, name)
 
     defp extract_header_value(headers, "content-length" = name) do
-      Logger.info("extract_header_value")
-
       headers
       |> extract_header(name)
       |> String.to_integer()
