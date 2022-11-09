@@ -15,6 +15,37 @@ def deps do
 end
 ```
 
+## Quick Start
+
+```elixir
+Logger.configure_backend(
+  :console,
+  format: "[$level] $metadata $message\n",
+  metadata: [:user]
+)
+
+port = 8901
+
+{:ok, _pid} =
+  Filex.Server.start_link(
+    port: port,
+    authentication: [{'lynx', 'test'}],
+    storage: {
+      Filex.Storage.S3,
+      scheme: "http://",
+      host: "localhost",
+      port: 4566,
+      region: "us-east-1",
+      bucket: "filex-sftp",
+      access_key_id: "",
+      secret_access_key: ""
+      #  access_key_id: [{:awscli, "default", 30}],
+      #  secret_access_key: [{:awscli, "default", 30}]
+    }
+  )
+
+```
+
 ## Running Tests
 
 ### Requirements
