@@ -24,6 +24,10 @@ defmodule Filex.Server do
     GenServer.start_link(__MODULE__, init_args, opts_with_defaults)
   end
 
+  def stop(server, reason \\ :normal, timeout \\ :infinity) do
+    GenServer.stop(server, reason, timeout)
+  end
+
   def init(opts \\ []) do
     port = Keyword.get(opts, :port, 22)
     system_dir = Keyword.get(opts, :system_dir, Filex.Utils.create_tmp_dir())
