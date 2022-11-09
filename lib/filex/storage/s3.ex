@@ -89,13 +89,21 @@ defmodule Filex.Storage.S3 do
         |> case do
           {:ok, %{headers: headers}} ->
             size = extract_header_value(headers, "content-length")
-            type = :regular
+            type = extract_file_type_from_headers(headers)
             access = :read_write
             ctime = extract_header_value(headers, "last-modified")
             atime = ctime
             mtime = ctime
-            mode = 33188
-            links = 1
+
+            mode =
+              case type do
+                # file with 522 permissions
+                :regular -> 33188
+                # directory with 755 permissions
+                :directory -> 16877
+              end
+
+            links = 0
             major_device = 0
             minor_device = 0
             inode = 0
@@ -438,6 +446,18 @@ defmodule Filex.Storage.S3 do
       {{:ok, offs}, state}
     rescue
       e -> Logger.error(e)
+    end
+
+    defp extract_file_type_from_headers(headers) do
+      headers
+      |> extract_header("content-type")
+      |> String.split(";")
+      |> List.first()
+      |> String.downcase()
+      |> case do
+        "application/x-directory" -> :directory
+        _ -> :regular
+      end
     end
 
     defp extract_header_value(headers, name)
