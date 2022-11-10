@@ -62,18 +62,12 @@ defmodule Filex.Storage.Local do
     end
 
     def ensure_dir(path, state) do
-      Logger.info("ensure_dir")
-
       abs_path = user_path(path, state)
 
       if File.exists?(abs_path) do
-        {:ok, path}
+        :ok
       else
         File.mkdir_p(abs_path)
-        |> case do
-          :ok -> {:ok, path}
-          error -> error
-        end
       end
     end
 

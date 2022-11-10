@@ -231,13 +231,34 @@ defmodule Filex.Storage.S3 do
     def make_dir(path, state) do
       path = to_string(path)
 
-      abs_dir = user_path(path, state)
+      outcome =
+        Path.split(path)
+        |> Enum.reduce_while("/", fn dir, parent ->
+          interim_path = Path.join(parent, dir)
 
-      bucket(state)
-      |> ExAws.S3.put_object(abs_dir, "", content_type: "application/x-directory; charset=UTF-8")
-      |> request(state)
+          is_dir(path, state)
+          |> case do
+            {true, _} ->
+              {:cont, interim_path}
 
-      after_event({:make_dir, path}, state, {:ok, state})
+            {false, _} ->
+              bucket(state)
+              |> ExAws.S3.put_object(user_path(interim_path, state), "",
+                content_type: "application/x-directory; charset=UTF-8"
+              )
+              |> request(state)
+              |> case do
+                {:ok, _} -> {:cont, interim_path}
+                {:error, error} -> {:halt, {:error, error}}
+              end
+          end
+        end)
+        |> case do
+          {:error, _} = error -> error
+          _ -> :ok
+        end
+
+      after_event({:make_dir, path}, state, {outcome, state})
     end
 
     # delete a directory
@@ -394,7 +415,8 @@ defmodule Filex.Storage.S3 do
     end
 
     def ensure_dir(path, state) do
-      make_dir(path, state)
+      {result, _new_state} = make_dir(path, state)
+      result
     end
 
     defp extract_file_type_from_headers(headers) do

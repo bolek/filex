@@ -56,7 +56,7 @@ defmodule Filex.SftpdChannel do
         |> List.keystore(:root_path, 0, {:root_path, root_path})
 
       # make sure user directory exists
-      {:ok, _path} = file_handler.ensure_dir('/', file_state)
+      :ok = file_handler.ensure_dir('/', file_state)
 
       file_state
     end
