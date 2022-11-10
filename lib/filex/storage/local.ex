@@ -34,7 +34,14 @@ defmodule Filex.Storage.Local do
       Path.join(state[:root_path], path)
     end
 
+    defp user(state) do
+      Keyword.get(state, :user, :anonymous) |> to_string
+    end
+
     defp on_event({event_name, meta}, state) do
+      Logger.metadata(user: user(state))
+      Logger.debug("on_event: #{inspect(event_name)}, #{inspect(meta)}, #{inspect(state)}")
+
       case state[:event_handler] do
         nil -> nil
         {module, fun} -> apply(module, fun, [{event_name, state[:user], meta}])
@@ -54,18 +61,20 @@ defmodule Filex.Storage.Local do
       end
     end
 
-    def ensure_dir(path) do
-      Path.split(path)
-      |> Enum.reduce_while({:ok, ""}, fn p, {_, parent} ->
-        dir = "#{parent}/#{p}"
+    def ensure_dir(path, state) do
+      Logger.info("ensure_dir")
 
-        case :file.make_dir(dir) do
-          :ok -> {:cont, {:ok, dir}}
-          {:error, :eexist} -> {:cont, {:ok, dir}}
-          {:error, :eisdir} -> {:cont, {:ok, dir}}
-          other -> {:halt, other}
+      abs_path = user_path(path, state)
+
+      if File.exists?(abs_path) do
+        {:ok, path}
+      else
+        File.mkdir_p(abs_path)
+        |> case do
+          :ok -> {:ok, path}
+          error -> error
         end
-      end)
+      end
     end
 
     def close(io_device, state) do

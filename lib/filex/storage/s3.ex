@@ -362,12 +362,6 @@ defmodule Filex.Storage.S3 do
       Keyword.get(state, :user, :anonymous) |> to_string
     end
 
-    def ensure_dir(path) do
-      Logger.info("ensure_dir/1")
-
-      {:ok, path}
-    end
-
     def get_cwd(state) do
       Logger.info("get_cwd/1")
 
@@ -445,6 +439,10 @@ defmodule Filex.Storage.S3 do
       {{:ok, offs}, state}
     rescue
       e -> Logger.error(e)
+    end
+
+    def ensure_dir(path, state) do
+      make_dir(path, state)
     end
 
     defp extract_file_type_from_headers(headers) do

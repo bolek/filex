@@ -25,7 +25,7 @@ defmodule Filex.SftpdChannel do
     Enum.map(record, fn {_k, v} -> v end) |> List.insert_at(0, :state) |> List.to_tuple()
   end
 
-  def ensure_dir(file_handler, path), do: file_handler.ensure_dir(path)
+  def ensure_dir(file_handler, path, file_state), do: file_handler.ensure_dir(path, file_state)
 
   defp populate_file_state(state) do
     file_handler = Keyword.fetch!(state, :file_handler)
@@ -46,16 +46,19 @@ defmodule Filex.SftpdChannel do
         if is_function(user_root_dir) do
           user_root_dir.(username)
         else
-          "#{user_root_dir}/#{username}"
+          Path.join(to_string(user_root_dir), to_string(username))
         end
 
-      # make sure directory exists
-      {:ok, _path} = ensure_dir(file_handler, root_path)
+      file_state =
+        file_state
+        |> List.keystore(:event_handler, 0, {:event_handler, event_handler})
+        |> List.keystore(:user, 0, {:user, username})
+        |> List.keystore(:root_path, 0, {:root_path, root_path})
+
+      # make sure user directory exists
+      {:ok, _path} = file_handler.ensure_dir('/', file_state)
 
       file_state
-      |> List.keystore(:event_handler, 0, {:event_handler, event_handler})
-      |> List.keystore(:user, 0, {:user, username})
-      |> List.keystore(:root_path, 0, {:root_path, root_path})
     end
   end
 
