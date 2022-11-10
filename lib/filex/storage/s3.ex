@@ -7,13 +7,10 @@ defmodule Filex.Storage.S3 do
     {Filex.Storage.S3.FileHandler,
      event_handler: event_handler,
      root_path: '/',
-     cwd: '/',
      aws_config: Filex.Storage.S3.Config.new(options)}
   end
 
   defmodule FileHandler do
-    # operations
-
     # open a file
     def open(path, [:binary, :write] = flags, state) do
       on_event({:open, {nil, path, flags}}, state)
@@ -229,14 +226,7 @@ defmodule Filex.Storage.S3 do
     def list_dir(rel_path, state) do
       Logger.info("list dir: #{inspect(rel_path)}")
 
-      abs_path = user_path(rel_path, state)
-
-      abs_path =
-        if String.ends_with?(abs_path, "/") do
-          abs_path
-        else
-          abs_path <> "/"
-        end
+      abs_path = user_path(rel_path, state) <> "/"
 
       objects =
         bucket(state)
@@ -352,8 +342,8 @@ defmodule Filex.Storage.S3 do
       Logger.info("user_path/2 ; #{path}")
 
       Path.join(user_root_path(state), path)
-      |> String.trim_leading("/")
       |> String.trim_trailing(".")
+      |> String.trim("/")
     end
 
     defp user(state) do
