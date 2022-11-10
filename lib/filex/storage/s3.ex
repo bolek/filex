@@ -46,7 +46,6 @@ defmodule Filex.Storage.S3 do
 
     # read file
     def read(op, len, state) do
-      Logger.info("read/3")
       %{position: position, size: size} = Keyword.fetch!(state, :aws_download_state)
       end_byte = min(position + len, size - 1)
 
@@ -77,9 +76,6 @@ defmodule Filex.Storage.S3 do
 
     # read file info
     def read_file_info(path, state) do
-      Logger.info("read_file_info/2")
-      Logger.info("read file info #{path}")
-
       file_info =
         ExAws.S3.head_object(bucket(state), user_path(path, state))
         |> request(state)
@@ -125,8 +121,6 @@ defmodule Filex.Storage.S3 do
 
     # rename / move file
     def rename(path, path2, state) do
-      Logger.info("rename/3")
-
       after_event(
         {:rename, {path, path2}},
         state,
@@ -140,9 +134,6 @@ defmodule Filex.Storage.S3 do
           data,
           state
         ) do
-      Logger.info("write/3")
-      Logger.info("write chunk")
-
       {%{index: index, parts: parts}, state} = Keyword.pop!(state, :aws_upload_progress)
 
       chunk =
@@ -164,8 +155,6 @@ defmodule Filex.Storage.S3 do
 
     # write file info
     def write_file_info(upload_op, info, state) do
-      Logger.info("write_file_info/3")
-
       after_event(
         {:write_file_info, {upload_op, info}},
         state,
@@ -175,8 +164,6 @@ defmodule Filex.Storage.S3 do
 
     # close a file
     def close(%ExAws.S3.Upload{} = upload_op, state) do
-      Logger.info("close/1")
-
       parts =
         Keyword.get(state, :aws_upload_progress)
         |> Map.fetch!(:parts)
@@ -197,8 +184,7 @@ defmodule Filex.Storage.S3 do
       after_event({:close, get_file_info}, state, {:ok, state})
     end
 
-    def close(io_device, state) do
-      Logger.info("close #{inspect(io_device)}")
+    def close(_io_device, state) do
       get_file_info = %{}
       after_event({:close, get_file_info}, state, {:ok, state})
     rescue
@@ -208,8 +194,6 @@ defmodule Filex.Storage.S3 do
 
     # delete a file
     def delete(rel_path, state) do
-      Logger.info("delete/2")
-
       result =
         bucket(state)
         |> ExAws.S3.delete_object(user_path(rel_path, state))
@@ -224,8 +208,6 @@ defmodule Filex.Storage.S3 do
 
     # list directory
     def list_dir(rel_path, state) do
-      Logger.info("list dir: #{inspect(rel_path)}")
-
       abs_path = user_path(rel_path, state) <> "/"
 
       objects =
@@ -248,7 +230,6 @@ defmodule Filex.Storage.S3 do
     # make directory
     def make_dir(path, state) do
       path = to_string(path)
-      Logger.info("make_dir/2 - #{path}")
 
       abs_dir = user_path(path, state)
 
@@ -261,8 +242,6 @@ defmodule Filex.Storage.S3 do
 
     # delete a directory
     def del_dir(path, state) do
-      Logger.info("del_dir/1")
-
       stream =
         ExAws.S3.list_objects(bucket(state), prefix: user_path(path, state))
         |> ExAws.stream!(ex_aws_config(state))
@@ -275,8 +254,6 @@ defmodule Filex.Storage.S3 do
 
     # make symlink
     def make_symlink(path2, path, state) do
-      Logger.info("make_synlink/3")
-
       after_event(
         {:make_symlink, {path2, path}},
         state,
@@ -285,8 +262,7 @@ defmodule Filex.Storage.S3 do
     end
 
     # read link - not supported
-    def read_link(path, state) do
-      Logger.info("read_link/2 #{path}")
+    def read_link(_path, state) do
       {{:error, :einval}, state}
     end
 
@@ -318,7 +294,6 @@ defmodule Filex.Storage.S3 do
     # helper functions
 
     defp aws_config(state) do
-      # Logger.info("aws_config/1")
       Keyword.fetch!(state, :aws_config)
     end
 
@@ -339,22 +314,16 @@ defmodule Filex.Storage.S3 do
     end
 
     defp user_path(path, state) do
-      Logger.info("user_path/2 ; #{path}")
-
       Path.join(user_root_path(state), path)
       |> String.trim_trailing(".")
       |> String.trim("/")
     end
 
     defp user(state) do
-      Logger.info("user/1")
-
       Keyword.get(state, :user, :anonymous) |> to_string
     end
 
     def get_cwd(state) do
-      Logger.info("get_cwd/1")
-
       cwd =
         Keyword.get(
           state,
@@ -373,14 +342,10 @@ defmodule Filex.Storage.S3 do
     def is_dir(rel_path, state)
 
     def is_dir('/', state) do
-      Logger.info("is_dir/1")
       {true, state}
     end
 
     def is_dir(rel_path, state) do
-      Logger.info("is dir: #{rel_path}")
-      Logger.info(user_path(rel_path, state))
-
       is_dir =
         bucket(state)
         |> ExAws.S3.get_object(user_path(rel_path, state))
@@ -404,7 +369,7 @@ defmodule Filex.Storage.S3 do
 
     def request(op, state) do
       Logger.metadata(user: Keyword.get(state, :user, :anonymous) |> to_string())
-      Logger.info("request/2")
+
       aws_config = ex_aws_config(state)
 
       op
@@ -412,8 +377,6 @@ defmodule Filex.Storage.S3 do
     end
 
     defp get_file_size(bucket, path, config) do
-      Logger.info("get_file_size/3")
-
       %{headers: headers} =
         ExAws.S3.head_object(bucket, path)
         |> ExAws.request!(config)
@@ -425,7 +388,6 @@ defmodule Filex.Storage.S3 do
     end
 
     def position(_io_device, offs, state) do
-      Logger.info("partition/3")
       {{:ok, offs}, state}
     rescue
       e -> Logger.error(e)
