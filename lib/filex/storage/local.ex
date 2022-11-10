@@ -140,11 +140,16 @@ defmodule Filex.Storage.Local do
       {:file.read_file_info(user_path(path, state)), state}
     end
 
-    def rename(path, path2, state) do
+    def rename(from_path, to_path, state) do
+      abs_from_path = user_path(from_path, state)
+      abs_to_path = user_path(to_path, state)
+
+      outcome = :file.rename(abs_from_path, abs_to_path)
+
       after_event(
-        {:rename, {path, path2}},
+        {:rename, {from_path, to_path}},
         state,
-        {:file.rename(user_path(path, state), user_path(path2, state)), state}
+        {outcome, state}
       )
     end
 

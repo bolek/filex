@@ -50,6 +50,9 @@ defmodule Filex.Support.GenericIntegrationTest do
 
     assert :ssh_sftp.list_dir(channel, "test") == {:ok, ['uploaded.txt']}
 
+    assert :ssh_sftp.rename(channel, 'test/uploaded.txt', 'test/uploaded2.txt') == :ok
+    assert :ssh_sftp.list_dir(channel, "test") == {:ok, ['uploaded2.txt']}
+
     assert :ssh_sftp.del_dir(channel, "test") == :ok
     assert :ssh_sftp.list_dir(channel, ".") == {:ok, []}
 

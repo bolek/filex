@@ -121,10 +121,21 @@ defmodule Filex.Storage.S3 do
 
     # rename / move file
     def rename(path, path2, state) do
+      ExAws.S3.put_object_copy(
+        bucket(state),
+        user_path(path2, state),
+        bucket(state),
+        user_path(path, state)
+      )
+      |> request(state)
+
+      ExAws.S3.delete_object(bucket(state), user_path(path, state))
+      |> request(state)
+
       after_event(
         {:rename, {path, path2}},
         state,
-        {:file.rename(user_path(path, state), user_path(path2, state)), state}
+        {:ok, state}
       )
     end
 
