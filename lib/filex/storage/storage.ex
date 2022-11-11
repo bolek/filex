@@ -7,7 +7,7 @@ defmodule Filex.Storage do
       |> maybe_set_users_root_dir()
       |> add_adapter_state()
 
-    {Filex.Storage.Base.FileHandler, state}
+    {Filex.Storage.FileHandler, state}
   end
 
   defp maybe_set_users_root_dir(state) do
