@@ -9,7 +9,7 @@ defmodule Filex.Server.LocalIntegrationTest do
         [
           port: port,
           authentication: [{'lynx', 'test'}],
-          storage: Filex.Storage.Local,
+          storage: {Filex.Storage.Local, users_root_dir: Path.expand("./tmp/home")},
           system_dir: Path.expand("./tmp")
         ],
         name: :local_sftp

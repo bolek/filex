@@ -40,37 +40,17 @@ defmodule Filex.SftpdChannel do
     Enum.map(record, fn {_k, v} -> v end) |> List.insert_at(0, :state) |> List.to_tuple()
   end
 
-  def ensure_dir(file_handler, path, file_state), do: file_handler.ensure_dir(path, file_state)
-
   defp populate_file_state(state) do
-    file_handler = Keyword.fetch!(state, :file_handler)
-
     file_state = state[:file_state]
 
-    if file_state[:user] do
+    # if user session initiated
+    if Filex.Storage.FileState.user(file_state) do
       file_state
     else
-      user_root_dir = file_state[:user_root_dir]
-
       xf = ssh_xfer(state[:xf])
-      [user: username] = :ssh.connection_info(xf[:cm], [:user])
+      [user: user] = :ssh.connection_info(xf[:cm], [:user])
 
-      root_path =
-        if is_function(user_root_dir) do
-          user_root_dir.(username)
-        else
-          Path.join(to_string(user_root_dir), to_string(username))
-        end
-
-      file_state =
-        file_state
-        |> List.keystore(:user, 0, {:user, username})
-        |> List.keystore(:root_path, 0, {:root_path, root_path})
-
-      # make sure user directory exists
-      :ok = file_handler.ensure_dir('/', file_state)
-
-      file_state
+      Filex.Storage.initialize_user_file_state(file_state, to_string(user))
     end
   end
 end

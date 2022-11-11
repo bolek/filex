@@ -1,11 +1,14 @@
 defmodule Filex.Utils do
-  def create_tmp_dir(prefix \\ "Filex") do
+  def tmp_dir!(prefix \\ "Filex") do
     time = System.os_time()
     partial = "#{prefix}-#{time}"
 
-    dir =
-      System.tmp_dir!()
-      |> Path.join(partial)
+    System.tmp_dir!()
+    |> Path.join(partial)
+  end
+
+  def create_tmp_dir(prefix \\ "Filex") do
+    dir = tmp_dir!(prefix)
 
     File.mkdir_p(dir)
 

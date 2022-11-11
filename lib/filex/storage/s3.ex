@@ -1,469 +1,373 @@
 defmodule Filex.Storage.S3 do
   require Logger
 
-  def spec(_ssh_options, options) do
-    {event_handler, options} = Keyword.pop!(options, :event_handler)
+  # Spec
+  def spec(options) do
+    if is_nil(options[:bucket]) do
+      raise "AWS bucket not configured for S3 storage."
+    end
 
-    {Filex.Storage.S3.FileHandler,
-     event_handler: event_handler,
-     root_path: '/',
-     aws_config: Filex.Storage.S3.Config.new(options)}
+    [
+      aws_config: ExAws.Config.new(:s3, options),
+      bucket: options[:bucket]
+    ]
   end
 
-  defmodule FileHandler do
-    # open a file
-    def open(path, [:binary, :write] = flags, state) do
-      on_event({:open, {nil, path, flags}}, state)
+  def default_users_root_dir() do
+    "/"
+  end
 
-      abs_path = user_path(path, state)
+  defp aws_config(state), do: state[:aws_config]
+  defp bucket(state), do: state[:bucket]
 
-      {
-        ExAws.S3.upload("", bucket(state), abs_path)
-        |> ExAws.S3.Upload.initialize(ex_aws_config(state)),
-        Keyword.put(state, :aws_upload_progress, %{index: 1, parts: []})
-      }
-    rescue
-      e ->
-        Logger.error(e)
-    end
+  def request(op, state) do
+    ExAws.request(op, aws_config(state))
+  end
 
-    def open(path, [:binary, :read] = flags, state) do
-      on_event({:open, {nil, path, flags}}, state)
+  # File Handler API
 
-      abs_path = user_path(path, state)
+  def close(%ExAws.S3.Upload{} = upload_op, state) do
+    parts =
+      Keyword.get(state, :aws_upload_progress)
+      |> Map.fetch!(:parts)
 
-      op = ExAws.S3.download_file(bucket(state), abs_path, "")
-
-      file_size = get_file_size(op.bucket, op.path, ex_aws_config(state))
-
-      {
-        {:ok, op},
-        Keyword.put(state, :aws_download_state, %{position: 0, size: file_size})
-      }
-    rescue
-      e -> Logger.error(e)
-    end
-
-    # read file
-    def read(op, len, state) do
-      %{position: position, size: size} = Keyword.fetch!(state, :aws_download_state)
-      end_byte = min(position + len, size - 1)
-
-      body =
-        if position == size do
-          :eof
-        else
-          {_, chunk} =
-            ExAws.S3.Download.get_chunk(
-              op,
-              %{end_byte: end_byte, start_byte: position},
-              ex_aws_config(state)
-            )
-
-          {:ok, chunk}
-        end
-
-      new_state = Keyword.put(state, :aws_download_state, %{position: end_byte + 1, size: size})
-
-      after_event(
-        {:read, %{}},
-        new_state,
-        {body, new_state}
-      )
-    rescue
-      e -> Logger.error(e)
-    end
-
-    # read file info
-    def read_file_info(path, state) do
-      file_info =
-        ExAws.S3.head_object(bucket(state), user_path(path, state))
-        |> request(state)
-        |> case do
-          {:ok, %{headers: headers}} ->
-            size = extract_header_value(headers, "content-length")
-            type = extract_file_type_from_headers(headers)
-            access = :read_write
-            ctime = extract_header_value(headers, "last-modified")
-            atime = ctime
-            mtime = ctime
-
-            mode =
-              case type do
-                # file with 522 permissions
-                :regular -> 33188
-                # directory with 755 permissions
-                :directory -> 16877
-              end
-
-            links = 0
-            major_device = 0
-            minor_device = 0
-            inode = 0
-            uid = 0
-            gid = 0
-
-            {:ok,
-             {:file_info, size, type, access, atime, mtime, ctime, mode, links, major_device,
-              minor_device, inode, uid, gid}}
-
-          {:error, {:http_error, 404, _}} ->
-            {:error, :enoent}
-
-          error ->
-            error
-        end
-
-      {file_info, state}
-    rescue
-      e -> Logger.error(e)
-    end
-
-    # rename / move file
-    def rename(path, path2, state) do
-      ExAws.S3.put_object_copy(
-        bucket(state),
-        user_path(path2, state),
-        bucket(state),
-        user_path(path, state)
-      )
-      |> request(state)
-
-      ExAws.S3.delete_object(bucket(state), user_path(path, state))
-      |> request(state)
-
-      after_event(
-        {:rename, {path, path2}},
-        state,
-        {:ok, state}
-      )
-    end
-
-    # write file
-    def write(
-          upload_op,
-          data,
-          state
-        ) do
-      {%{index: index, parts: parts}, state} = Keyword.pop!(state, :aws_upload_progress)
-
-      chunk =
-        ExAws.S3.Upload.upload_chunk(
-          {data, index},
-          upload_op,
-          ex_aws_config(state) |> Map.to_list()
-        )
-
-      after_event(
-        {:write, %{}},
-        state,
-        {:ok,
-         Keyword.put(state, :aws_upload_progress, %{index: index + 1, parts: [chunk | parts]})}
-      )
-    rescue
-      e -> Logger.error(e)
-    end
-
-    # write file info
-    def write_file_info(upload_op, info, state) do
-      after_event(
-        {:write_file_info, {upload_op, info}},
-        state,
-        {{:ok, info}, state}
-      )
-    end
-
-    # close a file
-    def close(%ExAws.S3.Upload{} = upload_op, state) do
-      parts =
-        Keyword.get(state, :aws_upload_progress)
-        |> Map.fetch!(:parts)
-
+    outcome =
       case Enum.find(parts, fn
              {:error, _} -> true
              _ -> false
            end) do
         nil ->
-          ExAws.S3.Upload.complete(parts, upload_op, ex_aws_config(state))
+          ExAws.S3.Upload.complete(parts, upload_op, aws_config(state))
           Keyword.delete(state, :aws_upload_progress)
 
         error ->
           error
       end
 
-      get_file_info = %{}
-      after_event({:close, get_file_info}, state, {:ok, state})
-    end
+    {outcome, state}
+  end
 
-    def close(_io_device, state) do
-      get_file_info = %{}
-      after_event({:close, get_file_info}, state, {:ok, state})
-    rescue
-      e ->
-        Logger.error(e)
-    end
+  def close(_io_device, state) do
+    {:ok, state}
+  end
 
-    # delete a file
-    def delete(rel_path, state) do
-      result =
-        bucket(state)
-        |> ExAws.S3.delete_object(user_path(rel_path, state))
-        |> ExAws.request(ex_aws_config(state))
-        |> case do
-          {:ok, _} -> :ok
-          error -> error
-        end
-
-      after_event({:delete, rel_path}, state, {result, state})
-    end
-
-    # list directory
-    def list_dir(rel_path, state) do
-      abs_path = user_path(rel_path, state) <> "/"
-
-      objects =
-        bucket(state)
-        |> ExAws.S3.list_objects(
-          delimiter: "/",
-          prefix: abs_path
-        )
-        |> ExAws.stream!(ex_aws_config(state))
-        |> Enum.to_list()
-        |> Enum.filter(&(&1.key != abs_path))
-        |> Enum.map(&(&1.key |> String.trim_leading(abs_path) |> String.to_charlist()))
-        |> Enum.sort()
-
-      {{:ok, objects}, state}
-    rescue
-      e -> Logger.error(e)
-    end
-
-    # make directory
-    def make_dir(path, state) do
-      path = to_string(path)
-
-      outcome =
-        Path.split(path)
-        |> Enum.reduce_while("/", fn dir, parent ->
-          interim_path = Path.join(parent, dir)
-
-          is_dir(path, state)
-          |> case do
-            {true, _} ->
-              {:cont, interim_path}
-
-            {false, _} ->
-              bucket(state)
-              |> ExAws.S3.put_object(user_path(interim_path, state), "",
-                content_type: "application/x-directory; charset=UTF-8"
-              )
-              |> request(state)
-              |> case do
-                {:ok, _} -> {:cont, interim_path}
-                {:error, error} -> {:halt, {:error, error}}
-              end
-          end
-        end)
-        |> case do
-          {:error, _} = error -> error
-          _ -> :ok
-        end
-
-      after_event({:make_dir, path}, state, {outcome, state})
-    end
-
-    # delete a directory
-    def del_dir(path, state) do
-      stream =
-        ExAws.S3.list_objects(bucket(state), prefix: user_path(path, state))
-        |> ExAws.stream!(ex_aws_config(state))
-        |> Stream.map(& &1.key)
-
-      ExAws.S3.delete_all_objects(bucket(state), stream) |> request(state)
-
-      after_event({:del_dir, path}, state, {:ok, state})
-    end
-
-    # make symlink
-    def make_symlink(path2, path, state) do
-      after_event(
-        {:make_symlink, {path2, path}},
-        state,
-        {{:error, :enotsup}, user_path(path, state), state}
-      )
-    end
-
-    # read link - not supported
-    def read_link(_path, state) do
-      {{:error, :einval}, state}
-    end
-
-    def read_link_info(path, state) do
-      read_file_info(path, state)
-    end
-
-    # event hooks
-    defp on_event({event_name, meta}, state) do
-      Logger.metadata(user: user(state))
-      Logger.debug("on_event: #{inspect(event_name)}, #{inspect(meta)}, #{inspect(state)}")
-
-      case state[:event_handler] do
-        nil -> nil
-        {module, fun} -> apply(module, fun, [{event_name, state[:user], meta}])
-        handler -> handler.({event_name, state[:user], meta})
-      end
-    end
-
-    defp after_event(param, state, result) do
-      Logger.debug(
-        "after_event:: param: #{inspect(param)}, state: #{inspect(state)}, result: #{inspect(result)}"
-      )
-
-      on_event(param, state)
-      result
-    end
-
-    # helper functions
-
-    defp aws_config(state) do
-      Keyword.fetch!(state, :aws_config)
-    end
-
-    defp ex_aws_config(state) do
-      state
-      |> aws_config()
-      |> Filex.Storage.S3.Config.ex_aws_config()
-    end
-
-    defp bucket(state) do
-      state
-      |> aws_config()
-      |> Filex.Storage.S3.Config.bucket()
-    end
-
-    defp user_root_path(state) do
-      state[:root_path]
-    end
-
-    defp user_path(path, state) do
-      Path.join(user_root_path(state), path)
-      |> String.trim_trailing(".")
-      |> String.trim("/")
-    end
-
-    defp user(state) do
-      Keyword.get(state, :user, :anonymous) |> to_string
-    end
-
-    def get_cwd(state) do
-      cwd =
-        Keyword.get(
-          state,
-          :cwd,
-          user_path(".", state)
-          |> case do
-            "" -> "/"
-            path -> path
-          end
-          |> String.to_charlist()
-        )
-
-      {{:ok, cwd}, state}
-    end
-
-    def is_dir(rel_path, state)
-
-    def is_dir('/', state) do
-      {true, state}
-    end
-
-    def is_dir(rel_path, state) do
-      is_dir =
-        bucket(state)
-        |> ExAws.S3.get_object(user_path(rel_path, state))
-        |> request(state)
-        |> case do
-          {:ok, %{headers: headers, status_code: 200}} ->
-            Enum.any?(headers, fn
-              {"content-type", "application/x-directory; charset=UTF-8"} -> true
-              _ -> false
-            end)
-
-          _ ->
-            false
-        end
-
-      {is_dir, state}
-    rescue
-      e ->
-        Logger.error(e)
-    end
-
-    def request(op, state) do
-      Logger.metadata(user: Keyword.get(state, :user, :anonymous) |> to_string())
-
-      aws_config = ex_aws_config(state)
-
-      op
-      |> ExAws.request(aws_config)
-    end
-
-    defp get_file_size(bucket, path, config) do
-      %{headers: headers} =
-        ExAws.S3.head_object(bucket, path)
-        |> ExAws.request!(config)
-
-      headers
-      |> Enum.find(fn {k, _} -> String.downcase(k) == "content-length" end)
-      |> elem(1)
-      |> String.to_integer()
-    end
-
-    def position(_io_device, offs, state) do
-      {{:ok, offs}, state}
-    rescue
-      e -> Logger.error(e)
-    end
-
-    def ensure_dir(path, state) do
-      {result, _new_state} = make_dir(path, state)
-      result
-    end
-
-    defp extract_file_type_from_headers(headers) do
-      headers
-      |> extract_header("content-type")
-      |> String.split(";")
-      |> List.first()
-      |> String.downcase()
+  def delete(path, state) do
+    result =
+      bucket(state)
+      |> ExAws.S3.delete_object(path)
+      |> ExAws.request(aws_config(state))
       |> case do
-        "application/x-directory" -> :directory
-        _ -> :regular
+        {:ok, _} -> :ok
+        error -> error
       end
+
+    {result, state}
+  end
+
+  def del_dir(path, state) do
+    path = String.trim(path, "/")
+
+    stream =
+      ExAws.S3.list_objects(bucket(state), prefix: path)
+      |> ExAws.stream!(aws_config(state))
+      |> Stream.map(& &1.key)
+
+    ExAws.S3.delete_all_objects(bucket(state), stream) |> request(state)
+
+    {:ok, state}
+  end
+
+  def get_cwd(state) do
+    {{:ok, "/"}, state}
+  end
+
+  def is_dir(path, state)
+
+  def is_dir("/", state) do
+    {true, state}
+  end
+
+  def is_dir(path, state) do
+    request =
+      bucket(state)
+      |> ExAws.S3.get_object(path)
+
+    is_dir =
+      request
+      |> request(state)
+      |> case do
+        {:ok, %{headers: headers, status_code: 200}} ->
+          Enum.any?(headers, fn
+            {"content-type", "application/x-directory; charset=UTF-8"} -> true
+            _ -> false
+          end)
+
+        _ ->
+          false
+      end
+
+    {is_dir, state}
+  rescue
+    e ->
+      Logger.error(e)
+      {{:error, e}, state}
+  end
+
+  def list_dir(path, state) do
+    path = String.trim(path, "/") <> "/"
+
+    objects =
+      bucket(state)
+      |> ExAws.S3.list_objects(
+        delimiter: "/",
+        prefix: path
+      )
+      |> ExAws.stream!(aws_config(state))
+      |> Enum.to_list()
+      |> Enum.filter(&(&1.key != path))
+      |> Enum.map(&(&1.key |> String.trim_leading(path) |> String.to_charlist()))
+      |> Enum.sort()
+
+    {{:ok, objects}, state}
+  rescue
+    e -> Logger.error(e)
+  end
+
+  def make_dir(path, state) do
+    outcome =
+      Path.split(path)
+      |> Enum.reduce_while("/", fn dir, parent ->
+        interim_path = Path.join(parent, dir)
+
+        is_dir(interim_path, state)
+        |> case do
+          {true, _} ->
+            {:cont, interim_path}
+
+          {false, _} ->
+            bucket(state)
+            |> ExAws.S3.put_object(interim_path, "",
+              content_type: "application/x-directory; charset=UTF-8"
+            )
+            |> request(state)
+            |> case do
+              {:ok, _} -> {:cont, interim_path}
+              {:error, error} -> {:halt, {:error, error}}
+            end
+        end
+      end)
+      |> case do
+        {:error, _} = error -> error
+        _ -> :ok
+      end
+
+    {outcome, state}
+  end
+
+  def make_symlink(_path_1, _path_2, state) do
+    {{:error, :enotsup}, state}
+  end
+
+  def open(path, [:binary, :read], state) do
+    op = ExAws.S3.download_file(bucket(state), path, "")
+
+    file_size = get_file_size(op.bucket, op.path, aws_config(state))
+
+    new_state = Keyword.put(state, :aws_download_state, %{position: 0, size: file_size})
+
+    {{:ok, op}, new_state}
+  rescue
+    e -> Logger.error(e)
+  end
+
+  def open(path, [:binary, :write], state) do
+    {
+      ExAws.S3.upload("", bucket(state), path)
+      |> ExAws.S3.Upload.initialize(aws_config(state)),
+      Keyword.put(state, :aws_upload_progress, %{index: 1, parts: []})
+    }
+  rescue
+    e ->
+      {{:error, e}, state}
+  end
+
+  def position(_io_device, offs, state) do
+    # new_state = Keyword.put(state, :aws_download_state, %{position: 0, size: file_size})
+    {{:ok, offs}, state}
+  rescue
+    e -> Logger.error(e)
+  end
+
+  def read(op, len, state) do
+    %{position: position, size: size} = Keyword.fetch!(state, :aws_download_state)
+    end_byte = min(position + len, size - 1)
+
+    outcome =
+      if position == size do
+        :eof
+      else
+        {_, chunk} =
+          ExAws.S3.Download.get_chunk(
+            op,
+            %{end_byte: end_byte, start_byte: position},
+            aws_config(state)
+          )
+
+        {:ok, chunk}
+      end
+
+    new_state = Keyword.put(state, :aws_download_state, %{position: end_byte + 1, size: size})
+
+    {outcome, new_state}
+  rescue
+    e ->
+      Logger.error(e)
+      {{:error, e}, state}
+  end
+
+  def read_link(_path, state) do
+    {{:error, :einval}, state}
+  end
+
+  def read_link_info(path, state) do
+    read_file_info(path, state)
+  end
+
+  def read_file_info(path, state) do
+    file_info =
+      ExAws.S3.head_object(bucket(state), path)
+      |> request(state)
+      |> case do
+        {:ok, %{headers: headers}} ->
+          size = extract_header_value(headers, "content-length")
+          type = extract_file_type_from_headers(headers)
+          access = :read_write
+          ctime = extract_header_value(headers, "last-modified")
+          atime = ctime
+          mtime = ctime
+
+          mode =
+            case type do
+              # file with 522 permissions
+              :regular -> 33188
+              # directory with 755 permissions
+              :directory -> 16877
+            end
+
+          links = 0
+          major_device = 0
+          minor_device = 0
+          inode = 0
+          uid = 0
+          gid = 0
+
+          {:ok,
+           {:file_info, size, type, access, atime, mtime, ctime, mode, links, major_device,
+            minor_device, inode, uid, gid}}
+
+        {:error, {:http_error, 404, _}} ->
+          {:error, :enoent}
+
+        error ->
+          error
+      end
+
+    {file_info, state}
+  rescue
+    e -> Logger.error(e)
+  end
+
+  def rename(path, path2, state) do
+    ExAws.S3.put_object_copy(
+      bucket(state),
+      path2,
+      bucket(state),
+      path
+    )
+    |> request(state)
+
+    ExAws.S3.delete_object(bucket(state), path)
+    |> request(state)
+
+    {:ok, state}
+  end
+
+  # write file
+  def write(
+        upload_op,
+        data,
+        state
+      ) do
+    {%{index: index, parts: parts}, state} = Keyword.pop!(state, :aws_upload_progress)
+
+    chunk =
+      ExAws.S3.Upload.upload_chunk(
+        {data, index},
+        upload_op,
+        aws_config(state) |> Map.to_list()
+      )
+
+    new_state =
+      Keyword.put(state, :aws_upload_progress, %{index: index + 1, parts: [chunk | parts]})
+
+    {:ok, new_state}
+  rescue
+    e ->
+      Logger.error(e)
+      {{:error, e}, state}
+  end
+
+  # write file info
+  def write_file_info(_upload_op, _info, state) do
+    {{:error, :not_supported}, state}
+  end
+
+  # Helpers
+
+  defp get_file_size(bucket, path, config) do
+    %{headers: headers} =
+      ExAws.S3.head_object(bucket, path)
+      |> ExAws.request!(config)
+
+    headers
+    |> Enum.find(fn {k, _} -> String.downcase(k) == "content-length" end)
+    |> elem(1)
+    |> String.to_integer()
+  end
+
+  defp extract_file_type_from_headers(headers) do
+    headers
+    |> extract_header("content-type")
+    |> String.split(";")
+    |> List.first()
+    |> String.downcase()
+    |> case do
+      "application/x-directory" -> :directory
+      _ -> :regular
     end
+  end
 
-    defp extract_header_value(headers, name)
+  defp extract_header_value(headers, name)
 
-    defp extract_header_value(headers, "content-length" = name) do
-      headers
-      |> extract_header(name)
-      |> String.to_integer()
-    end
+  defp extract_header_value(headers, "content-length" = name) do
+    headers
+    |> extract_header(name)
+    |> String.to_integer()
+  end
 
-    defp extract_header_value(headers, "last-modified" = name) do
-      headers
-      |> extract_header(name)
-      |> Timex.parse!("{RFC1123}")
-      |> DateTime.to_naive()
-      |> NaiveDateTime.to_erl()
-    end
+  defp extract_header_value(headers, "last-modified" = name) do
+    headers
+    |> extract_header(name)
+    |> Timex.parse!("{RFC1123}")
+    |> DateTime.to_naive()
+    |> NaiveDateTime.to_erl()
+  end
 
-    defp extract_header(headers, name)
+  defp extract_header(headers, name)
 
-    defp extract_header(headers, name) do
-      headers
-      |> Enum.find(fn {k, _} -> String.downcase(k) == name end)
-      |> elem(1)
-    end
+  defp extract_header(headers, name) do
+    headers
+    |> Enum.find(fn {k, _} -> String.downcase(k) == name end)
+    |> elem(1)
   end
 end

@@ -40,8 +40,6 @@ defmodule Filex.Support.GenericIntegrationTest do
     assert :ssh_sftp.make_dir(channel, "test") == :ok
     assert :ssh_sftp.list_dir(channel, ".") == {:ok, ['test']}
 
-    Logger.info("writing file")
-
     assert :ssh_sftp.write_file(
              channel,
              "test/uploaded.txt",

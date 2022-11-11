@@ -3,19 +3,17 @@ defmodule Filex.Config.Storage do
 
   require Logger
 
-  def configure(ssh_options, {adapter, config}) do
-    config_with_defaults =
+  def configure(ssh_options, {adapter, options}) do
+    options_with_defaults =
       [
         event_handler: fn event ->
-          Logger.info("Event: #{inspect(event)}")
+          nil
         end
       ]
-      |> Keyword.merge(config)
-
-    {file_handler, spec} = adapter.spec(ssh_options, config_with_defaults)
+      |> Keyword.merge(options)
 
     Filex.Config.SFTPChannel.configure(ssh_options,
-      file_handler: {file_handler, spec}
+      file_handler: Filex.Storage.spec(adapter, options_with_defaults)
     )
   end
 
