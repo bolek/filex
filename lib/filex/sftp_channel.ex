@@ -24,7 +24,7 @@ defmodule Filex.SftpdChannel do
   @impl :ssh_server_channel
   def handle_ssh_msg(msg, state) do
     s = state(state)
-    file_state = populate_file_state(s)
+    file_state = init_file_state(s)
 
     new_state = List.keystore(s, :file_state, 0, {:file_state, file_state})
 
@@ -40,7 +40,7 @@ defmodule Filex.SftpdChannel do
     Enum.map(record, fn {_k, v} -> v end) |> List.insert_at(0, :state) |> List.to_tuple()
   end
 
-  defp populate_file_state(state) do
+  defp init_file_state(state) do
     file_state = state[:file_state]
 
     # if user session initiated
