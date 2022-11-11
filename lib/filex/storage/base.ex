@@ -14,10 +14,10 @@ defmodule Filex.Storage.Base do
       only: [adapter: 1, user_dir: 1, put_adapter_state: 2]
 
     # Event Callbacks
-    def after_event(event, _prev_state, outcome) do
-      Logger.debug("event: #{inspect(event)} - #{inspect(outcome)}")
+    def after_event(event, _prev_state, {outcome, _new_state} = return) do
+      Logger.debug("event: #{inspect(event)} :: #{inspect(outcome)}")
 
-      outcome
+      return
     end
 
     def expand_path(path, state) do
@@ -88,32 +88,44 @@ defmodule Filex.Storage.Base do
       {adapter, adapter_state} = adapter(state)
       abs_path = expand_path(path, state)
 
-      adapter.list_dir(abs_path, adapter_state)
-      |> update_state(state)
+      {outcome, new_state} =
+        adapter.list_dir(abs_path, adapter_state)
+        |> update_state(state)
+
+      after_event({:list_dir, path}, state, {outcome, new_state})
     end
 
     def make_dir(path, state) do
       {adapter, adapter_state} = adapter(state)
       abs_path = expand_path(path, state)
 
-      adapter.make_dir(abs_path, adapter_state)
-      |> update_state(state)
+      {outcome, new_state} =
+        adapter.make_dir(abs_path, adapter_state)
+        |> update_state(state)
+
+      after_event({:make_dir, path}, state, {outcome, new_state})
     end
 
     def make_symlink(path, state) do
       {adapter, adapter_state} = adapter(state)
       abs_path = expand_path(path, state)
 
-      adapter.make_symlink(abs_path, adapter_state)
-      |> update_state(state)
+      {outcome, new_state} =
+        adapter.make_symlink(abs_path, adapter_state)
+        |> update_state(state)
+
+      after_event({:make_synlink, path}, state, {outcome, new_state})
     end
 
     def open(path, flags, state) do
       {adapter, adapter_state} = adapter(state)
       abs_path = expand_path(path, state)
 
-      adapter.open(abs_path, flags, adapter_state)
-      |> update_state(state)
+      {outcome, new_state} =
+        adapter.open(abs_path, flags, adapter_state)
+        |> update_state(state)
+
+      after_event({:open, path, flags}, state, {outcome, new_state})
     end
 
     def position(io_device, offset, state) do
@@ -159,8 +171,11 @@ defmodule Filex.Storage.Base do
       abs_from_path = expand_path(from_path, state)
       abs_to_path = expand_path(to_path, state)
 
-      adapter.rename(abs_from_path, abs_to_path, adapter_state)
-      |> update_state(state)
+      {outcome, new_state} =
+        adapter.rename(abs_from_path, abs_to_path, adapter_state)
+        |> update_state(state)
+
+      after_event({:rename, from_path, to_path}, state, {outcome, new_state})
     end
 
     def write(io_device, data, state) do
@@ -174,8 +189,11 @@ defmodule Filex.Storage.Base do
       {adapter, adapter_state} = adapter(state)
       abs_path = expand_path(path, state)
 
-      adapter.write_file_info(abs_path, info, adapter_state)
-      |> update_state(state)
+      {outcome, new_state} =
+        adapter.write_file_info(abs_path, info, adapter_state)
+        |> update_state(state)
+
+      after_event({:write_file_info, path}, state, {outcome, new_state})
     end
   end
 end
