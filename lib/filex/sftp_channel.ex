@@ -50,8 +50,6 @@ defmodule Filex.SftpdChannel do
     if file_state[:user] do
       file_state
     else
-      event_handler = file_state[:event_handler]
-
       user_root_dir = file_state[:user_root_dir]
 
       xf = ssh_xfer(state[:xf])
@@ -66,7 +64,6 @@ defmodule Filex.SftpdChannel do
 
       file_state =
         file_state
-        |> List.keystore(:event_handler, 0, {:event_handler, event_handler})
         |> List.keystore(:user, 0, {:user, username})
         |> List.keystore(:root_path, 0, {:root_path, root_path})
 
