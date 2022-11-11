@@ -21,6 +21,21 @@ defmodule Filex.SftpdChannel do
     :ssh_sftpd.handle_msg(msg, state)
   end
 
+  @impl :ssh_server_channel
+  def handle_ssh_msg(msg, state) do
+    s = state(state)
+    file_state = populate_file_state(s)
+
+    new_state = List.keystore(s, :file_state, 0, {:file_state, file_state})
+
+    :ssh_sftpd.handle_ssh_msg(msg, to_record(new_state))
+  end
+
+  @impl :ssh_server_channel
+  def terminate(reason, state) do
+    :ssh_sftpd.terminate(reason, state)
+  end
+
   defp to_record(record) do
     Enum.map(record, fn {_k, v} -> v end) |> List.insert_at(0, :state) |> List.to_tuple()
   end
@@ -60,19 +75,5 @@ defmodule Filex.SftpdChannel do
 
       file_state
     end
-  end
-
-  @impl :ssh_server_channel
-  def handle_ssh_msg(msg, state) do
-    s = state(state)
-    file_state = populate_file_state(s)
-    new_state = List.keystore(s, :file_state, 0, {:file_state, file_state})
-
-    :ssh_sftpd.handle_ssh_msg(msg, to_record(new_state))
-  end
-
-  @impl :ssh_server_channel
-  def terminate(reason, state) do
-    :ssh_sftpd.terminate(reason, state)
   end
 end
