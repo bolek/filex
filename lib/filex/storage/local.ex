@@ -127,8 +127,6 @@ defmodule Filex.Storage.Local do
     end
 
     def read_link(path, state) do
-      Logger.info("read_link/2")
-
       {:file.read_link(user_path(path, state)), state}
     end
 
